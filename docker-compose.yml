@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  rca-api:
+    build:
+      context: ./ingestion
+      dockerfile: Dockerfile
+    container_name: rca-api
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    restart: always
+
+  inference-worker:
+    build:
+      context: ./inference
+      dockerfile: Dockerfile
+    container_name: rca-inference-worker
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_HOST=postgres
+      - DB_NAME=rcafaas
+      - DB_USER=postgres
+      - DB_PASS=postgres
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    restart: always
+
+  evidence-api:
+    build:
+      context: ./evidence
+      dockerfile: Dockerfile
+    container_name: rca-evidence-api
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=rcafaas
+      - DB_USER=postgres
+      - DB_PASS=postgres
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    restart: always
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: rca-postgres
+    environment:
+      - POSTGRES_DB=rcafaas
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - rca_pg_data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: rca-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - rca_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    restart: always
+
+volumes:
+  rca_redis_data:
+  rca_pg_data:
