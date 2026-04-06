@@ -38,11 +38,18 @@ services:
       - DB_NAME=rcafaas
       - DB_USER=postgres
       - DB_PASS=postgres
+      - PROMETHEUS_URL=http://prometheus:9090
+      - OPENOBSERVE_URL=http://openobserve:5080
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,time; d=json.load(open('/tmp/worker_health')); assert time.time()-d['last_heartbeat']<30"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -84,8 +91,9 @@ services:
       - POSTGRES_DB=rcafaas
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-    ports:
-      - "5432:5432"
+    # ports exposed only on internal docker network; uncomment for local debugging
+    # ports:
+    #   - "5432:5432"
     volumes:
       - rca_pg_data:/var/lib/postgresql/data
       - ./db:/docker-entrypoint-initdb.d
@@ -104,8 +112,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: rca-redis
-    ports:
-      - "6379:6379"
+    command: redis-server --appendonly yes --appendfsync everysec
+    # ports exposed only on internal docker network; uncomment for local debugging
+    # ports:
+    #   - "6379:6379"
     volumes:
       - rca_redis_data:/data
     healthcheck:

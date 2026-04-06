@@ -31,17 +31,42 @@ def init_db():
         cur.execute("""
             CREATE TABLE IF NOT EXISTS rca_reports (
                 id SERIAL PRIMARY KEY,
+                idempotency_key VARCHAR(32) UNIQUE,
                 service_name VARCHAR(100) NOT NULL,
                 incident_time TIMESTAMP NOT NULL,
                 exit_code VARCHAR(10) NOT NULL,
-                root_cause VARCHAR(150) NOT NULL,
+                root_cause TEXT NOT NULL,
                 confidence_score FLOAT NOT NULL,
                 cpu_usage FLOAT,
                 memory_usage FLOAT,
                 disk_io FLOAT,
                 network_drops INT,
+                evidence_logs TEXT,
                 analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+        """)
+        
+        # Incremental schema migrations for existing tables
+        cur.execute("""
+            ALTER TABLE rca_reports
+            ADD COLUMN IF NOT EXISTS evidence_logs TEXT;
+        """)
+        cur.execute("""
+            ALTER TABLE rca_reports
+            ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(32);
+        """)
+
+        # Unique constraint for deduplication
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_rca_reports_idempotency
+            ON rca_reports (idempotency_key)
+            WHERE idempotency_key IS NOT NULL;
+        """)
+
+        # Index for the primary query pattern: filter by service, order by time
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rca_reports_service_time
+            ON rca_reports (service_name, incident_time DESC);
         """)
         conn.commit()
         cur.close()
